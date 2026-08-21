@@ -9,6 +9,48 @@ implicit none
   character(len=*),private, parameter :: mod_filename =&
    __FILE__
   logical :: lmicrobeMLdiag = .false.
+
+!Jing Tao: numerical guard for a DYING stand. DEFAULT .false. so a switch-off build is
+!Jing Tao: bit-for-bit identical to the R3 baseline binary (exp/sposc-input-param @ 12a47976).
+!Jing Tao:
+!Jing Tao: WHY. Two independent guards in the plant BGC are scaled by a quantity that VANISHES
+!Jing Tao: as a stand dies, so both stop protecting exactly when they are needed:
+!Jing Tao:   (a) PlantBranchMod::WithdrawNutBranchLeaves divides by CPOOLT under the guard
+!Jing Tao:       CPOOLT > ZERO4Groth_pft, and ZERO4Groth_pft = ZERO*PlantPopuLive_pft
+!Jing Tao:       (InitPlantMod.F90:125) is proportional to the LIVE PLANT POPULATION. As the
+!Jing Tao:       population collapses the threshold collapses with it and the test degenerates
+!Jing Tao:       to "CPOOLT > 0", admitting an absolutely-tiny denominator -> SIGFPE.
+!Jing Tao:   (b) PlantBalMod normalises its carbon-balance relative error by total vegetation
+!Jing Tao:       carbon, which also collapses, so rounding-level residuals read as a large
+!Jing Tao:       relative error and abort the run.
+!Jing Tao: Measured on the EcoSIM_BioCON R3 Sobol prefix, 2026-08-20: 436 of 7071 attempted
+!Jing Tao: cases (7.5%) died this way -- 336 SIGFPE, 100 balance aborts -- and 12 of 12 balance
+!Jing Tao: aborts inspected had total vegetation C < 1 gC/m2 with GPP = 0.
+!Jing Tao:
+!Jing Tao: SCOPE, deliberately MINIMAL. This does NOT change ZERO4Groth_pft itself: that symbol
+!Jing Tao: has 260 references across 12+ files, 226 of them threshold comparisons, and it is
+!Jing Tao: used correctly elsewhere as an "is there any plant here" test. Only the DIVISION and
+!Jing Tao: the BALANCE TEST are protected, at their own sites.
+!Jing Tao:
+!Jing Tao: WHAT IT DOES NOT DO: it does not make these configurations viable. The stands still
+!Jing Tao: die; they die quietly and are counted as dead rather than as crashes. That matters
+!Jing Tao: for sensitivity analysis (a dead-but-complete case is a valid Y value, a crashed one
+!Jing Tao: is a hole in the design) but it is NOT a calibration improvement.
+!Jing Tao: Full record: A2MC memory/model_logs/20260820a_Two_EcoSIM_Guards_Scaled_By_The_Dying_Quantity.md
+  logical :: guard_floor_dying_stand = .false.
+
+!Jing Tao: absolute floor [gC] on the carbon-pool DENOMINATOR in the leaf nutrient-withdrawal
+!Jing Tao: division. Far below any physically meaningful pool (a healthy stand carries
+!Jing Tao: O(1e2-1e3) gC/m2) and far above the denormal range, so it bounds the quotient
+!Jing Tao: without perturbing any live-plant arithmetic.
+  real(r8), parameter :: CPOOL_DIV_FLOOR_dying = 1.0e-12_r8
+
+!Jing Tao: total vegetation carbon [gC/m2] below which the carbon-balance RELATIVE test is
+!Jing Tao: meaningless and is skipped (the absolute test still applies). Chosen as 1.0 because
+!Jing Tao: the 12 inspected aborts span 7e-4 to 0.54 gC/m2 while a healthy stand is 3e2-2e3,
+!Jing Tao: so 1.0 is ~0.05% of a live stand yet above every observed degenerate case.
+!Jing Tao: PI REVIEW WANTED on this value -- it decides which aborts are suppressed.
+  real(r8), parameter :: VEGC_BAL_FLOOR_dying = 1.0_r8
   integer :: idebug_day           = -1         !specify the day being debugged
   integer :: idebug_year          = -1         !specify the year being debugged
   integer :: iselect_plantZ       = -1
