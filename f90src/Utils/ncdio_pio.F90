@@ -204,7 +204,7 @@ module ncdio_pio
 
   type, public :: file_desc_t
     integer(i4) :: fh
-    !Jing Tao: widened 128 -> 512. Every NetCDF open funnels its path through this buffer
+    ! --- Jing Tao --- widened 128 -> 512. Every NetCDF open funnels its path through this buffer
     !(ncd_pio_openfile: write(file%filename,'(A)')trim(fname)); at len=128 a >128-char input
     !path overflowed with a Fortran 'End of record' crash at file open. A2MC HPC case paths
     !(/global/cfs/cdirs/.../<case>/<pft>.nc) run ~100-130 chars; the namelist input buffers

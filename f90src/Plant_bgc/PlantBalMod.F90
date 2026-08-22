@@ -655,9 +655,10 @@ implicit none
   integer :: NE,I,J,K
   real(r8) :: balE(NumPlantChemElms)
   real(r8) :: err_rel,dGPP  
-!Jing Tao: set true only when guard_floor_dying_stand is on AND total vegetation carbon has
-!Jing Tao: collapsed below VEGC_BAL_FLOOR_dying, which makes the RELATIVE balance test
-!Jing Tao: meaningless. Declared here rather than module-scope so it cannot leak between calls.
+! --- Jing Tao ---
+! set true only when guard_floor_dying_stand is on AND total vegetation carbon has
+! collapsed below VEGC_BAL_FLOOR_dying, which makes the RELATIVE balance test
+! meaningless. Declared here rather than module-scope so it cannot leak between calls.
   logical :: lveg_too_small_for_relative_test
   associate(                                                          &
     NY                        => plt_site%NY                         ,& !input  : Y coordinate
@@ -750,13 +751,14 @@ implicit none
     write(888,*)'surf literfall C  =',SurfLitrfallElms_pft(NE,NZ)       
     write(888,*)('-',K=1,100)         
     !if(I/=plt_distb%iDayPlantHarvest_pft(NZ) .and. I/=plt_distb%iDayPlanting_pft(NZ)) &  
-!Jing Tao: err_rel above is normalised by total vegetation carbon, which COLLAPSES as the
-!Jing Tao: stand dies, so a rounding-level absolute residual becomes a "large" relative error
-!Jing Tao: and aborts a run that has merely gone extinct. Skip the RELATIVE test below a floor
-!Jing Tao: on total vegetation carbon; the ABSOLUTE test (>1.e-6) still applies, and the
-!Jing Tao: diagnostic dump above is still written, so nothing is hidden -- the run simply
-!Jing Tao: continues and the stand is recorded as dead rather than as a crash.
-!Jing Tao: Default-off: when the switch is .false. this is .false. and the abort is unchanged.
+! --- Jing Tao ---
+! err_rel above is normalised by total vegetation carbon, which COLLAPSES as the
+! stand dies, so a rounding-level absolute residual becomes a "large" relative error
+! and aborts a run that has merely gone extinct. Skip the RELATIVE test below a floor
+! on total vegetation carbon; the ABSOLUTE test (>1.e-6) still applies, and the
+! diagnostic dump above is still written, so nothing is hidden -- the run simply
+! continues and the stand is recorded as dead rather than as a crash.
+! Default-off: when the switch is .false. this is .false. and the abort is unchanged.
     lveg_too_small_for_relative_test = .false.
     if(guard_floor_dying_stand) lveg_too_small_for_relative_test = &
       (AMAX1(TotEndVegE_pft(NE,NZ),TotBegVegE_pft(NE,NZ)) < VEGC_BAL_FLOOR_dying)

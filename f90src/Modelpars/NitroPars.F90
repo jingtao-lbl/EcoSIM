@@ -8,7 +8,7 @@ module NitroPars
   use netcdf
   use ncdio_pio  
   use EcoSimConst
-!Jing Tao: needed for the SPOSC_in carrier below, which is dimensioned (jskenc,jcplxc)
+! --- Jing Tao --- needed for the SPOSC_in carrier below, which is dimensioned (jskenc,jcplxc)
 !          = (4 kinetic components, 5 organo-microbial complexes), matching micpar%SPOSC.
   use EcoSIMConfig, only : jskenc, jcplxc
   implicit none
@@ -117,7 +117,7 @@ module NitroPars
   real(r8) :: RMOM           !specific maintenance respiration, [g C g-1 N h-1]
   real(r8) :: SPORC(2)       !specific decomposition rate constant microbial residue,  [g C g-1 N h-1]
   real(r8) :: SPOMC(2)       !specific decomposition rate constant microbial biomass,  [g C g-1 N h-1]
-!Jing Tao: NitroPars-side carrier for the SOLID-SOM specific decomposition rate, promoted from a
+! --- Jing Tao --- NitroPars-side carrier for the SOLID-SOM specific decomposition rate, promoted from a
 !          hardcoded literal in MicBGCPars::SetPars to an optional MicrobePars.nc input.
 !          Units h-1. Shape (jskenc,jcplxc) = (4 kinetic components: protein/carbohydrate/
 !          cellulose/lignin) x (5 complexes: woody-litr/fine-litr/manure/POM/humus).
@@ -144,7 +144,7 @@ module NitroPars
   H2KI = 1.0_r8
   OAKI = 12._r8
 
-!Jing Tao: SPOSC_in default, set UNCONDITIONALLY -- deliberately BEFORE the .not.ReadPars() branch
+! --- Jing Tao --- SPOSC_in default, set UNCONDITIONALLY -- deliberately BEFORE the .not.ReadPars() branch
 !  below, not inside it. The other parameters only need a default when the whole read FAILS, but
 !  SPOSC is a NEW variable that no existing MicrobePars.nc carries: a file can be read SUCCESSFULLY
 !  and still not contain SPOSC. Setting it inside the else-branch would leave it uninitialised in
@@ -268,7 +268,7 @@ module NitroPars
   implicit none
   logical :: ans
   type(file_desc_t) :: ncfid
-!Jing Tao: descriptor + presence flag for the guarded optional SPOSC read below.
+! --- Jing Tao --- descriptor + presence flag for the guarded optional SPOSC read below.
   type(Var_desc_t)  :: vardesc_SPOSC
   logical           :: readv_SPOSC
 
@@ -351,7 +351,7 @@ module NitroPars
   call ncd_getvar(ncfid,'SPORC',SPORC)
   call ncd_getvar(ncfid,'SPOMC',SPOMC)
 
-!Jing Tao: SPOSC is read only IF PRESENT -- this must not be a bare ncd_getvar like the lines above.
+! --- Jing Tao --- SPOSC is read only IF PRESENT -- this must not be a bare ncd_getvar like the lines above.
 !  ncd_getvar -> check_ret -> endrun ABORTS the run when a variable is missing (ncdio_pio.F90:418-422),
 !  and every MicrobePars.nc written before this change lacks SPOSC. A bare read would therefore turn
 !  every existing input file into a hard crash. check_var only sets a flag, so this leaves the

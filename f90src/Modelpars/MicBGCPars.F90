@@ -253,7 +253,7 @@ contains
 !------------------------------------------------------------------------------------------
 
   subroutine SetPars(this)
-!Jing Tao: imported at SUBROUTINE scope, not module scope, so MicBGCPars does not acquire a
+! --- Jing Tao --- imported at SUBROUTINE scope, not module scope, so MicBGCPars does not acquire a
 !  module-wide dependency on NitroPars for one array. NitroPars does not use MicBGCPars, so there
 !  is no cycle. Boot order makes this safe: initNitroPars (which sets/reads SPOSC_in) runs from
 !  InitModules -> initNitro -> MicBGCFGMod.F90:61, BEFORE readi -> MicPar%SetPars assigns it here.
@@ -321,7 +321,7 @@ contains
   !microbial traits
   DOSA=(/0.25E-03_r8,0.25_r8,0.25_r8,0.25_r8,0.25_r8/)
 
-!Jing Tao: SPOSC (solid-SOM specific decomposition rate, h-1) is now sourced from NitroPars::SPOSC_in
+! --- Jing Tao --- SPOSC (solid-SOM specific decomposition rate, h-1) is now sourced from NitroPars::SPOSC_in
 !  instead of the literal that used to sit here. SPOSC_in defaults to those exact same 20 values in
 !  initNitroPars and is overwritten ONLY if the MicrobePars.nc actually carries an SPOSC variable, so
 !  with any pre-existing input file this line reproduces the previous behaviour bit-for-bit.
