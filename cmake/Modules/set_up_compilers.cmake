@@ -59,7 +59,23 @@ macro(set_up_compilers)
 
     endif()
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fdefault-real-8 -fdefault-double-8")
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Wno-unused-variable -ffpe-trap=invalid,zero,overflow,underflow")
+#Jing Tao: UNDERFLOW removed from the trap list. Underflow is a BENIGN IEEE condition -- a
+#Jing Tao: result too small for the normal range decays gracefully into the subnormals -- not an
+#Jing Tao: error, and trapping it aborts arithmetic that is perfectly well defined. It is the
+#Jing Tao: proximate cause of 887 of the 1,129 EcoSIM_BioCON R3 crashes (79%), all in dying
+#Jing Tao: stands. Mechanism, reproduced in isolation with these exact flags: PlantMathFuncMod::
+#Jing Tao: ExchFluxLimiter caps XFRE at fromState*0.9999, so the caller in PlantBranchMod::
+#Jing Tao: WithdrawNutBranchLeaves computes fromState - XFRE = fromState*1e-4. Once a decaying
+#Jing Tao: pool falls below ~1e-304 that quotient lands among the subnormals, where reduced
+#Jing Tao: precision makes it INEXACT; tiny + inexact is exactly the IEEE underflow condition,
+#Jing Tao: so the trap fires and the run dies at a SUBTRACTION. Verified: the same program with
+#Jing Tao: 'underflow' removed returns 1e-309 and 1e-311 correctly and exits 0.
+#Jing Tao: invalid / zero / overflow are KEPT -- those are genuine errors and must still abort.
+#Jing Tao: Removing a trap cannot change any arithmetic RESULT, only whether execution
+#Jing Tao: continues, so a run that completed under the old flags is bit-for-bit unaffected.
+#Jing Tao: That is a claim to TEST, not assume -- see the inertness gate in
+#Jing Tao: use_cases/EcoSIM_BioCON/memory/phase_results/20260820a_*/RELAUNCH_FAILED_CASES.md
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Wno-unused-variable -ffpe-trap=invalid,zero,overflow")
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Wno-unused-parameter -Wno-unused-function")
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Wuninitialized -Wno-unused-dummy-argument")
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ffree-line-length-none")

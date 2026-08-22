@@ -4,7 +4,7 @@ module PlantBranchMod
 ! module for plant biological transformations
   use minimathmod,   only: isclose, safe_adb, AZMAX1
   use data_kind_mod, only: r8 => DAT_KIND_R8,yearIJ_type
-  use EcoSIMCtrlMod, only: etimer
+  use EcoSIMCtrlMod, only: etimer, guard_floor_dying_stand, CPOOL_DIV_FLOOR_dying
   use PlantBalMod
   use ElmIDMod
   use DebugToolMod
@@ -259,6 +259,8 @@ module PlantBranchMod
   integer :: KMinGroingLeafNodeNum
   real(r8) :: ZPOOLD,XFRN1,XFRP1
   real(r8) :: CPOOLT
+!Jing Tao: floored copy of CPOOLT used ONLY as the division denominator below.
+  real(r8) :: CPOOLT_div
   real(r8) :: XFRE(1:NumPlantChemElms)
   real(r8) :: PPOOLD
   character(len=*), parameter :: subname='WithdrawNutBranchLeaves'
@@ -287,9 +289,16 @@ module PlantBranchMod
         PPOOLD=LeafElmntNode_brch(ielmp,K,NB,NZ)*CanopyNonstElms_brch(ielmc,NB,NZ) &
           -CanopyNonstElms_brch(ielmp,NB,NZ)*LeafElmntNode_brch(ielmc,K,NB,NZ)
           
-        XFRN1=AZMAX1(AMIN1(1.0E-03_r8*ZPOOLD/CPOOLT,LeafElmntNode_brch(ielmn,K,NB,NZ) &
+!Jing Tao: the guard above (CPOOLT > ZERO4Groth_pft) does NOT bound this division once the
+!Jing Tao: stand is dying, because ZERO4Groth_pft = ZERO*PlantPopuLive_pft collapses with the
+!Jing Tao: population and the test degenerates to "CPOOLT > 0". Floor the DENOMINATOR ONLY,
+!Jing Tao: leaving CPOOLT itself untouched for every other use. Default-off: when the switch
+!Jing Tao: is .false. CPOOLT_div IS CPOOLT and the arithmetic is bit-for-bit unchanged.
+        CPOOLT_div = CPOOLT
+        if(guard_floor_dying_stand) CPOOLT_div = AMAX1(CPOOLT, CPOOL_DIV_FLOOR_dying)
+        XFRN1=AZMAX1(AMIN1(1.0E-03_r8*ZPOOLD/CPOOLT_div,LeafElmntNode_brch(ielmn,K,NB,NZ) &
           -ZPLFM*CNLFB*LeafElmntNode_brch(ielmc,K,NB,NZ)))            
-        XFRP1=AZMAX1(AMIN1(1.0E-03_r8*PPOOLD/CPOOLT,LeafElmntNode_brch(ielmp,K,NB,NZ) &
+        XFRP1=AZMAX1(AMIN1(1.0E-03_r8*PPOOLD/CPOOLT_div,LeafElmntNode_brch(ielmp,K,NB,NZ) &
           -ZPLFM*CPLFB*LeafElmntNode_brch(ielmc,K,NB,NZ)))
           
         XFRE(ielmn)=AMAX1(XFRN1,10.0_r8*XFRP1)
