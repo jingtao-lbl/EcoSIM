@@ -2951,9 +2951,38 @@ module PlantBranchMod
     IF(iPlantPhenolPattern_pft(NZ).EQ.iplt_perennial)THEN
       !perennial plant
       CPOOLT=AZMAX1(SeasonalNonstElms_pft(ielmc,NZ)+CanopyNonstElms_brch(ielmc,NB,NZ))          
+! --- Jing Tao ---
+! DIVIDE-BY-ZERO, measured not inferred. The IF above guards
+! SeasonalNonstElms_pft(ielmc), but the divisor is CPOOLT -- a DIFFERENT quantity. CPOOLT
+! comes from AZMAX1, whose single-argument form (MiniMathMod::AZMAX1_s) returns EXACTLY
+! 0._r8 when its argument is below tiny_val=1.e-12. So when both nonstructural C pools sit
+! near 1e-13 their sum clamps to zero, the guard still passes, and this divides by zero.
+! Evidence, EcoSIM_BioCON R3 case 7143 at simulated 2022, caught under gdb: MXCSR = 0x1926
+! (ZE set, IE and OE clear), divisor xmm1 = exactly 0.0, dividend xmm0 = -2.955e-24 --
+! which is the product of two ~1e-12 pools, corroborating this site rather than another.
+! 42 of the 50 cases still failing after the R3 relaunch die this way.
+!
+! FIX: skip, do not floor. A zero CPOOLT means both pools are empty, so there is no
+! gradient and no transfer; flooring the denominator with an epsilon would manufacture a
+! large spurious flux out of nothing.
+!
+! NOT switch-gated, deliberately, and this is the reason: on every path where the old code
+! RETURNED a value (CPOOLT > 0) the arithmetic is bit-for-bit unchanged, and the only path
+! it alters is the one that previously aborted the run. There is no baseline behaviour to
+! preserve in that branch, so a default-off switch would only preserve the crash.
+! safe_adb() was considered and rejected: its success path calls AZERO(), which clamps any
+! result below 1.e-10 to zero, so it would change values where the denominator is healthy
+! and break V0-at-equality.
+!
+! The adjacent root-transfer block below already floors its CPOOLT with
+! AMAX1(ZERO4Groth_pft,...). One of the two was protected and this one was not.
       DO NE=2,NumPlantChemElms
-        NonstGradt=(SeasonalNonstElms_pft(NE,NZ)*CanopyNonstElms_brch(ielmc,NB,NZ)- &
-          CanopyNonstElms_brch(NE,NB,NZ)*SeasonalNonstElms_pft(ielmc,NZ))/CPOOLT            
+        if(CPOOLT>0._r8)then
+          NonstGradt=(SeasonalNonstElms_pft(NE,NZ)*CanopyNonstElms_brch(ielmc,NB,NZ)- &
+            CanopyNonstElms_brch(NE,NB,NZ)*SeasonalNonstElms_pft(ielmc,NZ))/CPOOLT            
+        else
+          NonstGradt=0._r8
+        endif
         ElmXferStore2Shoot(NE)=AZMAX1(FRSV(iPlantTurnoverPattern_pft(NZ))*NonstGradt)
       ENDDO
       !annual plant
@@ -2990,9 +3019,20 @@ module PlantBranchMod
   IF(SeasonalNonstElms_pft(ielmc,NZ).GT.ZERO4Groth_pft(NZ))THEN
     IF(iPlantPhenolPattern_pft(NZ).EQ.iplt_perennial)THEN
       CPOOLT=AMAX1(ZERO4Groth_pft(NZ),SeasonalNonstElms_pft(ielmc,NZ)+TotalRootNonstElms(ielmc))
+! --- Jing Tao ---
+! Same shape as the shoot block above, and floored -- but only at ZERO4Groth_pft, which is
+! ZERO*PlantPopuLive_pft (StartqMod.F90:86, InitPlantMod.F90:125, PlantDisturbsMod.F90:309)
+! and therefore collapses to 0 as the stand's population goes to 0. When it does, this floor
+! floors at zero and the same divide-by-zero is reachable here.
+! Not observed in the R3 failures -- the shoot block above faults first -- so this is
+! prophylactic, and identical in form and in cost to the fix above.
       DO NE=2,NumPlantChemElms
-        NonstGradt=(SeasonalNonstElms_pft(NE,NZ)*TotalRootNonstElms(ielmc)-&
-          TotalRootNonstElms(NE)*SeasonalNonstElms_pft(ielmc,NZ))/CPOOLT            
+        if(CPOOLT>0._r8)then
+          NonstGradt=(SeasonalNonstElms_pft(NE,NZ)*TotalRootNonstElms(ielmc)-&
+            TotalRootNonstElms(NE)*SeasonalNonstElms_pft(ielmc,NZ))/CPOOLT            
+        else
+          NonstGradt=0._r8
+        endif
         NonstElm2RootMyco(NE)=AZMAX1(FRSV(iPlantTurnoverPattern_pft(NZ))*NonstGradt)
       ENDDO
     ELSE
