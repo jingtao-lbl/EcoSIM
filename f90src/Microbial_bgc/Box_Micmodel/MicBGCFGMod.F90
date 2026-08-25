@@ -1326,6 +1326,15 @@ module MicBGCMod
   real(r8) :: OQCI
   real(r8) :: RHOSCM,dHyd
   real(r8) :: FCNK(1:jcplx),FCPK(1:jcplx)
+! --- Jing Tao --- DIAGNOSTIC ONLY, added for the A2MC hydrolysis-cap probe. RAWCAP holds the
+!  UNCAPPED product SPOSC(M,K)*RHydrolysisScalCmpK(K) [dimensionless] so it can be compared with
+!  the hardcoded 0.5 ceiling applied at the AMIN1 below. `hydcap_first` fires once so that a
+!  RUN THAT NEVER REACHES THIS ROUTINE is distinguishable from one that reaches it and never
+!  meets the print condition -- the two are otherwise both silent, and silence would be read as
+!  'the cap never binds'. Remove this block, or gate it behind a namelist debug flag, before any
+!  production run.
+  real(r8) :: RAWCAP
+  logical, save :: hydcap_first = .true.
 
   character(len=*), parameter :: subname='SolidOMDecomposition'
 
@@ -1438,6 +1447,33 @@ module MicBGCMod
       RHydrolysisScalCmpK(K)=AZMAX1(ROQC4HeterMicActCmpK(K))*DFNS*OQCI/BulkSOMC(K)
       
       D785: DO M=1,jsken
+! --- Jing Tao --- DIAGNOSTIC ONLY. No behavioural change: RAWCAP is written but never read by the
+!  model, and the AMIN1 below is untouched. This answers a question that CANNOT be settled by
+!  reading source, because the binding condition depends on runtime state
+!  (ROQC4HeterMicActCmpK, BulkSOMC, COSC, CDOM all enter RHydrolysisScalCmpK):
+!    SolidOM(ielmc,M,K)  the substrate pool [g C d-2]; if it is not > ZEROS the whole hydrolysis
+!                        term is skipped and SPOSC cannot matter for a reason unrelated to the cap
+!    ZEROS               the model's own smallness threshold, printed so the comparison is visible
+!    RAWCAP              SPOSC(M,K)*RHydrolysisScalCmpK(K), the UNCAPPED product [-]
+!    AMIN1(0.5,RAWCAP)   what the model actually uses
+!    CLMP                1 when the 0.5 cap BOUND for this (M,K), 0 when it did not
+!    POOL                1 when the SolidOM > ZEROS guard passed
+!  Printed OUTSIDE the guard on purpose. The guard is the leading alternative explanation for
+!  SPOSC's measured insensitivity, so printing only inside it would leave that hypothesis
+!  untestable and force a second build to answer it.
+!  SPOSC here is already post-boost (MicBGCPars.F90 applies x1.5 to the litter complexes), so
+!  RAWCAP reflects what the model uses -- do not re-apply 1.5 when interpreting.
+!  Follow-up: remove or namelist-gate this block before any production run.
+        RAWCAP = SPOSC(M,K)*RHydrolysisScalCmpK(K)
+        if (hydcap_first) then
+          write(*,'(A)') 'HYDCAP-INIT SolidOMDecomposition reached at least once'
+          hydcap_first = .false.
+        endif
+        if (mod(I,60)==2 .and. J==12) then
+          write(*,'(A,5I6,4E15.6,2I3)') 'HYDCAP ', I, J, KL, M, K, &
+            SolidOM(ielmc,M,K), ZEROS, RAWCAP, AMIN1(0.5_r8,RAWCAP), &
+            merge(1,0,RAWCAP > 0.5_r8), merge(1,0,SolidOM(ielmc,M,K) > ZEROS)
+        endif
         IF(SolidOM(ielmc,M,K).GT.ZEROS)THEN                  
           RHydlysSolidOM(ielmc,M,K) = SolidOMAct(M,K)*AMIN1(0.5_r8,SPOSC(M,K)*RHydrolysisScalCmpK(K))            
           dHyd=AMIN1(1._r8,RHydlysSolidOM(ielmc,M,K)/SolidOM(ielmc,M,K))      
