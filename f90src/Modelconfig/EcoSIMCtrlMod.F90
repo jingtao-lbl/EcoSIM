@@ -40,6 +40,11 @@ implicit none
 ! Full record: A2MC memory/model_logs/20260820a_Two_EcoSIM_Guards_Scaled_By_The_Dying_Quantity.md
   logical :: guard_floor_dying_stand = .false.
 
+! --- Jing Tao (2026-10-14, branch fix/r2-plant-balance) ---
+! Conserve mass when GrowFibrous1stRootAxes removes a negative root structural pool (RootMod,
+! ChargeRootDeficitUpAxis). Off by default, so a run reproduces the previous behaviour exactly.
+  logical :: conserve_root_clamp = .false.
+
 ! --- Jing Tao ---
 ! absolute floor [gC] on the carbon-pool DENOMINATOR in the leaf nutrient-withdrawal
 ! division. Far below any physically meaningful pool (a healthy stand carries

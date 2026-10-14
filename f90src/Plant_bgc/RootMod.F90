@@ -1,7 +1,7 @@
 module RootMod
   use data_kind_mod,       only: r8 => DAT_KIND_R8, yearIJ_type
   use minimathmod,         only: safe_adb,  AZMAX1, AZMIN1, AZERO, sfexp
-  use EcoSIMCtrlMod,       only: lsoilCompaction,llignification,lcoarseroot
+  use EcoSIMCtrlMod,       only: lsoilCompaction,llignification,lcoarseroot,conserve_root_clamp
   use DebugToolMod,        only: PrintInfo
   use abortutils,          only: endrun
   use PlantNonstElmDynMod, only: RepleteLowSeaStorByRoot
@@ -3251,6 +3251,8 @@ implicit none
     !  REMOVE ANY NEGATIVE ROOT MASS FROM NONSTRUCTURAL C
     IF(RootMyco2ndStrutElms_rpvr(ielmc,N,L,NR,NZ).LT.0.0_r8)THEN
       DO NE=1,NumPlantChemElms
+        !Jing Tao (2026-10-14, branch fix/r2-plant-balance): book what the AZMAX1 below would discard, see ChargeRootDeficitUpAxis
+        if(conserve_root_clamp)call ChargeRootDeficitUpAxis(NE,N,L,L,NR,NZ,RootMyco2ndStrutElms_rpvr(NE,N,L,NR,NZ))
         RootMycoNonstElms_rpvr(NE,N,L,NZ)       = AZMAX1(RootMycoNonstElms_rpvr(NE,N,L,NZ)+RootMyco2ndStrutElms_rpvr(NE,N,L,NR,NZ))
         RootMyco2ndStrutElms_rpvr(NE,N,L,NR,NZ) = 0._r8
       ENDDO
@@ -3259,6 +3261,8 @@ implicit none
     !  what if nonstructural C is insufficient to meet the negative root mass
     IF(RootMyco1stStrutElms_rpvr(ielmc,L,NR,NZ).LT.0.0_r8)THEN
       DO NE=1,NumPlantChemElms
+        !Jing Tao (2026-10-14, branch fix/r2-plant-balance): book what the AZMAX1 below would discard, see ChargeRootDeficitUpAxis
+        if(conserve_root_clamp)call ChargeRootDeficitUpAxis(NE,N,L,L-1,NR,NZ,RootMyco1stStrutElms_rpvr(NE,L,NR,NZ))
         RootMycoNonstElms_rpvr(NE,N,L,NZ)     = AZMAX1(RootMycoNonstElms_rpvr(NE,N,L,NZ)+RootMyco1stStrutElms_rpvr(NE,L,NR,NZ))
         RootMyco1stElm_raxs(NE,NR,NZ)         = RootMyco1stElm_raxs(NE,NR,NZ)+RootMyco1stStrutElms_rpvr(NE,L,NR,NZ)
         RootMyco1stStrutElms_rpvr(NE,L,NR,NZ) = 0._r8 
@@ -3287,6 +3291,58 @@ implicit none
   call PrintInfo('end '//subname)
   end associate
   end subroutine GrowFibrous1stRootAxes
+
+!----------------------------------------------------------------------------------------------------
+! --- Jing Tao (2026-10-14, branch fix/r2-plant-balance) ---
+! Called only when conserve_root_clamp is on, just before GrowFibrous1stRootAxes removes a negative
+! root structural pool by adding it to the layer's nonstructural pool through AZMAX1. The part the
+! nonstructural pool cannot cover, deficit = -(nonst+strut) > 0, would be discarded by AZMAX1, which
+! creates mass: the litterfall and respiration that drove the pool negative were already booked. For
+! a non-coarse root this recurs hourly, because the starvation kill is sized from the whole axis
+! (RootMyco1stElm_raxs) but taken from the tip layer's pool. This takes the deficit, element by
+! element, from the same axis's primary roots in layers LS up to NGTopRootLayer_pft, out of the active
+! zone so that primary = active + lignified still holds, and lowers the axis total by the same amount.
+! Any remainder the axis cannot supply is booked as negative fine-root litterfall in layer L, as
+! Grow1stRootElongZoneLayL already does for its own edge case. With no deficit it changes nothing,
+! so the AZMAX1 that follows gives the old result. Known and left as is: the clamp's own update of
+! RootMyco1stElm_raxs, and root length, which is not reduced with the mass.
+  subroutine ChargeRootDeficitUpAxis(NE,N,L,LS,NR,NZ,strut)
+  implicit none
+  integer,  intent(in) :: NE,N,L,LS,NR,NZ
+  real(r8), value      :: strut      !negative structural pool about to be removed in layer L, [g d-2]
+  real(r8) :: remain,take
+  integer  :: LL,M
+  associate(                                                                      &
+    NGTopRootLayer_pft        => plt_morph%NGTopRootLayer_pft        ,& !input  :soil layer at planting depth, [-]
+    iroot                     => pltpar%iroot                        ,& !input  :group id of plant root litter
+    k_fine_comp               => pltpar%k_fine_comp                  ,& !input  :fine litter complex id
+    PlantElmAllocMat4Litr     => plt_soilchem%PlantElmAllocMat4Litr  ,& !input  :litter kinetic fraction, [-]
+    RootMycoNonstElms_rpvr    => plt_biom%RootMycoNonstElms_rpvr     ,& !input  :root layer nonstructural element, [g d-2]
+    RootMyco1stElm_raxs       => plt_biom%RootMyco1stElm_raxs        ,& !inoput :root chemical element for primary axes, [g d-2]
+    RootMyco1stStrutElms_rpvr => plt_biom%RootMyco1stStrutElms_rpvr  ,& !inoput :soil layer chemical element of primary roots, [g d-2]
+    Root1stActStructElms_rpvr => plt_biom%Root1stActStructElms_rpvr  ,& !inoput :root layer active zone element in primary axes, [g d-2]
+    LitrfallElms_pvr          => plt_bgcr%LitrfallElms_pvr            & !inoput :plant LitrFall element, [g d-2 h-1]
+  )
+  remain=-(RootMycoNonstElms_rpvr(NE,N,L,NZ)+strut)
+  if(remain<=0._r8)return
+  DO LL=LS,NGTopRootLayer_pft(NZ),-1
+    take=AMIN1(remain,AZMAX1(Root1stActStructElms_rpvr(NE,LL,NR,NZ)))
+    if(take>0._r8)then
+      Root1stActStructElms_rpvr(NE,LL,NR,NZ) = Root1stActStructElms_rpvr(NE,LL,NR,NZ)-take
+      RootMyco1stStrutElms_rpvr(NE,LL,NR,NZ) = RootMyco1stStrutElms_rpvr(NE,LL,NR,NZ)-take
+      RootMyco1stElm_raxs(NE,NR,NZ)          = RootMyco1stElm_raxs(NE,NR,NZ)-take
+      remain                                 = remain-take
+    endif
+    if(remain<=0._r8)exit
+  ENDDO
+  if(remain>0._r8)then
+    DO M=1,jsken
+      LitrfallElms_pvr(NE,M,k_fine_comp,L,NZ)=LitrfallElms_pvr(NE,M,k_fine_comp,L,NZ) &
+        -PlantElmAllocMat4Litr(NE,iroot,M,NZ)*remain
+    ENDDO
+  endif
+  end associate
+  end subroutine ChargeRootDeficitUpAxis
 !----------------------------------------------------------------------------------------------------
 
   subroutine SecondaryGrowthZone(yearIJ,N,NR,L,NZ,VMXCSpec,RootSinkC_vr,Root1stSink_pvr, &
