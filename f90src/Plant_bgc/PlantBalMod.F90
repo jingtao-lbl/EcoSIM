@@ -600,6 +600,71 @@ implicit none
   end subroutine SumRootBiome
 
 !----------------------------------------------------------------------------------------------------
+! --- Jing Tao (2026-10-14, branch fix/r2-plant-balance) ---
+! Root pools and root respiration that the plant BALANCE must count but the model's own root
+! totals do not reach. SumRootBiome sums root pools over L=1..MaxNumRootLays and root nodules over
+! NU..NMaxRootBotLayer_pft, and SumRootAR sums root respiration over 1..NMaxRootBotLayer_pft, while
+! root uptake, exudation and ShootRootElmTransfer act on L=NU..MaxSoilLays4Root_pft, which the API
+! sets to NK_col = MaxNumRootLays+1. Mass moved into or out of a layer those totals omit appears as a
+! balance error although the model conserves it. For the balance only, this returns
+!   beyondE  root pools in layers MaxNumRootLays+1..LBAL, the part RootElms_pft omits
+!   nodulE   root nodules over NU..LBAL, used in place of RootNoduleElms_pft
+!   beyondAR root respiration in layers NMaxRootBotLayer_pft+1..LBAL, the part RootAutoCO2_pft omits
+! with LBAL = MAX(MaxNumRootLays,MaxSoilLays4Root_pft). RootElms_pft, RootNoduleElms_pft and
+! RootAutoCO2_pft are left as they are, because the model computes with them. Belowground litterfall
+! stays at 1..MaxNumRootLays: ZeroGrosub resets LitrfallElms_pvr only over 0..MaxNumRootLays, so a
+! deeper layer would be counted again every hour.
+  subroutine SumRootPoolsForBalance(NZ,beyondE,nodulE,beyondAR)
+  implicit none
+  integer, intent(in) :: NZ
+  real(r8), intent(out) :: beyondE(NumPlantChemElms)
+  real(r8), intent(out) :: nodulE(NumPlantChemElms)
+  real(r8), intent(out) :: beyondAR
+  integer :: L,N,NE,LBAL
+  associate(                                                          &
+    NU                        => plt_site%NU                         ,& !input  :current soil surface layer number, [-]
+    MaxNumRootLays            => plt_site%MaxNumRootLays             ,& !input  :maximum root layer number,[-]
+    MaxSoilLays4Root_pft      => plt_morph%MaxSoilLays4Root_pft      ,& !input  :maximum soil layer number for all root axes,[-]
+    NMaxRootBotLayer_pft      => plt_morph%NMaxRootBotLayer_pft      ,& !input  :maximum soil layer number for all root axes, [-]
+    Myco_pft                  => plt_morph%Myco_pft                  ,& !input  :mycorrhizal type (no or yes),[-]
+    NumStructuralRootAxes_pft => plt_morph%NumStructuralRootAxes_pft ,& !input  :number of structural root axes,[-]
+    iPlantNfixType_pft        => plt_morph%iPlantNfixType_pft        ,& !input  :N2 fixation type,[-]
+    RootMycoNonstElms_rpvr    => plt_biom%RootMycoNonstElms_rpvr     ,& !input  :root layer nonstructural element, [g d-2]
+    RootMyco2ndStrutElms_rpvr => plt_biom%RootMyco2ndStrutElms_rpvr  ,& !input  :root layer element secondary axes, [g d-2]
+    RootMyco1stStrutElms_rpvr => plt_biom%RootMyco1stStrutElms_rpvr  ,& !input  :root layer element primary axes, [g d-2]
+    RootMediumStructElms_rpvr => plt_biom%RootMediumStructElms_rpvr  ,& !input  :root layer element for medium size root axes, [g d-2]
+    RootNodulStrutElms_rpvr   => plt_biom%RootNodulStrutElms_rpvr    ,& !input  :root layer nodule element, [g d-2]
+    RootNodulNonstElms_rpvr   => plt_biom%RootNodulNonstElms_rpvr    ,& !input  :root layer nonstructural element, [g d-2]
+    RootCO2Autor_pvr          => plt_rbgc%RootCO2Autor_pvr            & !input  :root respiration constrained by O2, [g d-2 h-1]
+  )
+  LBAL     = MAX(MaxNumRootLays,MaxSoilLays4Root_pft(NZ))
+  beyondE  = 0._r8
+  nodulE   = 0._r8
+  beyondAR = 0._r8
+  DO L=MaxNumRootLays+1,LBAL
+    DO NE=1,NumPlantChemElms
+      DO N=1,Myco_pft(NZ)
+        beyondE(NE)=beyondE(NE)+RootMycoNonstElms_rpvr(NE,N,L,NZ) &
+          +sum(RootMyco2ndStrutElms_rpvr(NE,N,L,1:NumStructuralRootAxes_pft(NZ),NZ))
+      ENDDO
+      beyondE(NE)=beyondE(NE)+sum(RootMyco1stStrutElms_rpvr(NE,L,1:NumStructuralRootAxes_pft(NZ),NZ)) &
+        +sum(RootMediumStructElms_rpvr(NE,L,1:NumStructuralRootAxes_pft(NZ),NZ))
+    ENDDO
+  ENDDO
+  if(is_plant_N2fix(iPlantNfixType_pft(NZ)) .and. is_root_N2fix(iPlantNfixType_pft(NZ)))THEN
+    DO NE=1,NumPlantChemElms
+      nodulE(NE)=sum(RootNodulStrutElms_rpvr(NE,NU:LBAL,NZ))+sum(RootNodulNonstElms_rpvr(NE,NU:LBAL,NZ))
+    ENDDO
+  endif
+  DO N=1,Myco_pft(NZ)
+    DO L=NMaxRootBotLayer_pft(NZ)+1,LBAL
+      beyondAR=beyondAR+RootCO2Autor_pvr(N,L,NZ)
+    ENDDO
+  ENDDO
+  end associate
+  end subroutine SumRootPoolsForBalance
+
+!----------------------------------------------------------------------------------------------------
   subroutine EnterPlantBalance(yearIJ,NP)
   !
   implicit none
@@ -607,14 +672,18 @@ implicit none
   integer, intent(in) :: NP
   INTEGER :: NZ,NE
   real(r8) :: mass_finale(NumPlantChemElms)
+  real(r8) :: beyondE(NumPlantChemElms),nodulE(NumPlantChemElms),beyondAR
 
   DO NZ=1,NP
     
+    !Jing Tao (2026-10-14, branch fix/r2-plant-balance): balance-only root totals, see SumRootPoolsForBalance
+    call SumRootPoolsForBalance(NZ,beyondE,nodulE,beyondAR)
     DO NE=1,NumPlantChemElms
       plt_bgcr%RootShootExch_pvr(NE,:,NZ)=0._r8
+      !Jing Tao (2026-10-14, branch fix/r2-plant-balance): nodulE replaces RootNoduleElms_pft and beyondE is added
       plt_biom%TotEndVegE_pft(NE,NZ) = plt_biom%RootElms_pft(NE,NZ)+plt_biom%ShootElms_pft(NE,NZ)+&
         plt_biom%SeasonalNonstElms_pft(NE,NZ)+plt_biom%StandDeadStrutElms_pft(NE,NZ)+ plt_biom%ShootNoduleElms_pft(NE,NZ)  + &
-        plt_biom%RootNoduleElms_pft(NE,NZ) 
+        nodulE(NE)+beyondE(NE)
 
 !      if(plt_biom%RootElms_pft(NE,NZ)<0._r8)then
 !        write(944,*)yearIJ%I*1000+yearIJ%J/24.,NE,plt_biom%RootElms_pft(NE,NZ),plt_biom%ShootElms_pft(NE,NZ),&
@@ -681,6 +750,7 @@ implicit none
 ! meaningless. Declared here rather than module-scope so it cannot leak between calls.
   logical :: lveg_too_small_for_relative_test
   logical :: lbalC_abort
+  real(r8) :: beyondE(NumPlantChemElms),nodulE(NumPlantChemElms),beyondAR
   associate(                                                          &
     NY                        => plt_site%NY                         ,& !input  : Y coordinate
     NX                        => plt_site%NX                         ,& !input  : X coordinate
@@ -737,12 +807,15 @@ implicit none
     DynCi2CaRatio_pft(NZ)=  CanopyCi2CaRatio_pft(NZ)
   ENDIF
   call SumPlantBiome(yearIJ,NZ,header)
+  !Jing Tao (2026-10-14, branch fix/r2-plant-balance): balance-only root totals, see SumRootPoolsForBalance
+  call SumRootPoolsForBalance(NZ,beyondE,nodulE,beyondAR)
 
   I=yearIJ%I; J=yearIJ%J  
 
   DO NE=1,NumPlantChemElms
+    !Jing Tao (2026-10-14, branch fix/r2-plant-balance): nodulE replaces RootNoduleElms_pft and beyondE is added, as at entry
     TotEndVegE_pft(NE,NZ) = RootElms_pft(NE,NZ)+ShootElms_pft(NE,NZ)+SeasonalNonstElms_pft(NE,NZ)+StandDeadStrutElms_pft(NE,NZ)  + &
-      ShootNoduleElms_pft(NE,NZ)  + RootNoduleElms_pft(NE,NZ)   
+      ShootNoduleElms_pft(NE,NZ)  + nodulE(NE) + beyondE(NE)
 
     balE(NE)=TotEndVegE_pft(NE,NZ)-TotBegVegE_pft(NE,NZ) &
       -NodulInfectElms_pft(NE,NZ)-Soil2RootMycoExudE_pft(NE,NZ) &
@@ -750,7 +823,8 @@ implicit none
   ENDDO
   
   dGPP=sum(plt_rbgc%GPP_brch(:,NZ))
-  balE(ielmc)=balE(ielmc)-GrossCO2Fix_pft(NZ)-GrossResp_pft(NZ)   
+  !Jing Tao (2026-10-14, branch fix/r2-plant-balance): beyondAR adds root respiration from layers RootAutoCO2_pft omits
+  balE(ielmc)=balE(ielmc)-GrossCO2Fix_pft(NZ)-GrossResp_pft(NZ)-beyondAR
   balE(ielmn)=balE(ielmn)-RootNutUptakeN_pft(NZ)-CanopyN2Fix_pft(NZ)-RootN2Fix_pft(NZ)-NH3Dep2Can_pft(NZ)             
   balE(ielmp)=balE(ielmp)-RootNutUptakeP_pft(NZ)      
 
@@ -797,6 +871,8 @@ implicit none
     write(888,*)'AR,rootAR,shootAR =',GrossResp_pft(NZ),RootAutoCO2_pft(NZ),CanopyGrosRCO2_pft(NZ)   
     write(888,*)'seed planted      =',plt_biom%SeedPlantedElm_pft(NE,NZ)
     write(888,*)'surf literfall C  =',SurfLitrfallElms_pft(NE,NZ)       
+    !Jing Tao (2026-10-14, branch fix/r2-plant-balance): the balance-only root terms, see SumRootPoolsForBalance
+    write(888,*)'beyondC,nodC,AR   =',beyondE(NE),nodulE(NE),beyondAR
     write(888,*)('-',K=1,100)         
     !if(I/=plt_distb%iDayPlantHarvest_pft(NZ) .and. I/=plt_distb%iDayPlanting_pft(NZ)) &  
     if(lbalC_abort)call endrun('C balance error test failure in '//trim(mod_filename)//' at line',__LINE__)                    
