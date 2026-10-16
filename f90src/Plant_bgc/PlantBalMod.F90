@@ -36,6 +36,8 @@ implicit none
   public :: SumCanopyBiome
   public :: SumLitfallAbg
   logical,save  :: lfile(2)=.true.
+  !Jing Tao (2026-10-15, branch fix/r2-plant-balance): start-of-hour balance-only root terms, kept for the abort dumps only
+  real(r8),allocatable,save :: beyondE_beg(:,:),nodulE_beg(:,:)
   contains
   ![header]
 !----------------------------------------------------------------------------------------------------
@@ -614,15 +616,27 @@ implicit none
 ! RootAutoCO2_pft are left as they are, because the model computes with them. Belowground litterfall
 ! stays at 1..MaxNumRootLays: ZeroGrosub resets LitrfallElms_pvr only over 0..MaxNumRootLays, so a
 ! deeper layer would be counted again every hour.
+! --- Jing Tao (2026-10-15, branch fix/r2-plant-balance) ---
+! The two STOCK terms, beyondE and nodulE, are summed over a FIXED range ending at LSTK =
+! MAX(MaxNumRootLays,NK), not at LBAL. LBAL moves within the hour: EnterPlantBalance sees the previous
+! hour's final MaxSoilLays4Root_pft, PhenologyUpdate resets it to NMaxRootBotLayer_pft
+! (PlantPhenolMod.F90:453) and GetInLayerRootDepth raises it to the deepest primary-root tip layer
+! (RootMod.F90:5459). In an hour when a tip re-enters layer NK, pools already in that layer were left
+! out of the start total and counted in the end total, so mass the model never created read as a
+! balance error (EcoSIM_Lusignan R2b pilot cases 53, 29 and 145). A stock is mass wherever it sits, so
+! both totals now count every layer the plant arrays carry; the API copies root, axis and nodule pools
+! over 1..NK every hour (PlantRootTransferMod.F90:190, PlantRootAxisTransferMod.F90:139). The FLUX term
+! beyondAR keeps LBAL, the range the hour's respiration loops actually ran over.
   subroutine SumRootPoolsForBalance(NZ,beyondE,nodulE,beyondAR)
   implicit none
   integer, intent(in) :: NZ
   real(r8), intent(out) :: beyondE(NumPlantChemElms)
   real(r8), intent(out) :: nodulE(NumPlantChemElms)
   real(r8), intent(out) :: beyondAR
-  integer :: L,N,NE,LBAL
+  integer :: L,N,NE,LBAL,LSTK
   associate(                                                          &
     NU                        => plt_site%NU                         ,& !input  :current soil surface layer number, [-]
+    NK                        => plt_site%NK                         ,& !input  :total layers with roots, [-]
     MaxNumRootLays            => plt_site%MaxNumRootLays             ,& !input  :maximum root layer number,[-]
     MaxSoilLays4Root_pft      => plt_morph%MaxSoilLays4Root_pft      ,& !input  :maximum soil layer number for all root axes,[-]
     NMaxRootBotLayer_pft      => plt_morph%NMaxRootBotLayer_pft      ,& !input  :maximum soil layer number for all root axes, [-]
@@ -638,10 +652,13 @@ implicit none
     RootCO2Autor_pvr          => plt_rbgc%RootCO2Autor_pvr            & !input  :root respiration constrained by O2, [g d-2 h-1]
   )
   LBAL     = MAX(MaxNumRootLays,MaxSoilLays4Root_pft(NZ))
+  !Jing Tao (2026-10-15, branch fix/r2-plant-balance): fixed stock range, the same at both ends of the hour
+  LSTK     = MAX(MaxNumRootLays,NK)
   beyondE  = 0._r8
   nodulE   = 0._r8
   beyondAR = 0._r8
-  DO L=MaxNumRootLays+1,LBAL
+  !Jing Tao (2026-10-15, branch fix/r2-plant-balance): LSTK replaces LBAL for the stock
+  DO L=MaxNumRootLays+1,LSTK
     DO NE=1,NumPlantChemElms
       DO N=1,Myco_pft(NZ)
         beyondE(NE)=beyondE(NE)+RootMycoNonstElms_rpvr(NE,N,L,NZ) &
@@ -653,7 +670,8 @@ implicit none
   ENDDO
   if(is_plant_N2fix(iPlantNfixType_pft(NZ)) .and. is_root_N2fix(iPlantNfixType_pft(NZ)))THEN
     DO NE=1,NumPlantChemElms
-      nodulE(NE)=sum(RootNodulStrutElms_rpvr(NE,NU:LBAL,NZ))+sum(RootNodulNonstElms_rpvr(NE,NU:LBAL,NZ))
+      !Jing Tao (2026-10-15, branch fix/r2-plant-balance): LSTK replaces LBAL for the stock
+      nodulE(NE)=sum(RootNodulStrutElms_rpvr(NE,NU:LSTK,NZ))+sum(RootNodulNonstElms_rpvr(NE,NU:LSTK,NZ))
     ENDDO
   endif
   DO N=1,Myco_pft(NZ)
@@ -674,10 +692,17 @@ implicit none
   real(r8) :: mass_finale(NumPlantChemElms)
   real(r8) :: beyondE(NumPlantChemElms),nodulE(NumPlantChemElms),beyondAR
 
+  !Jing Tao (2026-10-15, branch fix/r2-plant-balance): diagnostic store, sized like TotBegVegE_pft
+  if(.not.allocated(beyondE_beg))then
+    allocate(beyondE_beg(NumPlantChemElms,size(plt_biom%TotBegVegE_pft,2))); beyondE_beg=0._r8
+    allocate(nodulE_beg(NumPlantChemElms,size(plt_biom%TotBegVegE_pft,2)));  nodulE_beg=0._r8
+  endif
   DO NZ=1,NP
     
     !Jing Tao (2026-10-14, branch fix/r2-plant-balance): balance-only root totals, see SumRootPoolsForBalance
     call SumRootPoolsForBalance(NZ,beyondE,nodulE,beyondAR)
+    !Jing Tao (2026-10-15, branch fix/r2-plant-balance): kept so an abort dump shows both ends of the hour
+    beyondE_beg(:,NZ)=beyondE; nodulE_beg(:,NZ)=nodulE
     DO NE=1,NumPlantChemElms
       plt_bgcr%RootShootExch_pvr(NE,:,NZ)=0._r8
       !Jing Tao (2026-10-14, branch fix/r2-plant-balance): nodulE replaces RootNoduleElms_pft and beyondE is added
@@ -873,7 +898,9 @@ implicit none
     write(888,*)'surf literfall C  =',SurfLitrfallElms_pft(NE,NZ)       
     !Jing Tao (2026-10-14, branch fix/r2-plant-balance): the balance-only root terms, see SumRootPoolsForBalance
     write(888,*)'beyondC,nodC,AR   =',beyondE(NE),nodulE(NE),beyondAR
-    write(888,*)('-',K=1,100)         
+    !Jing Tao (2026-10-15, branch fix/r2-plant-balance): the same stock terms at the start of the hour
+    write(888,*)'beg beyondC,nodC  =',beyondE_beg(NE,NZ),nodulE_beg(NE,NZ)
+    write(888,*)('-',K=1,100)
     !if(I/=plt_distb%iDayPlantHarvest_pft(NZ) .and. I/=plt_distb%iDayPlanting_pft(NZ)) &  
     if(lbalC_abort)call endrun('C balance error test failure in '//trim(mod_filename)//' at line',__LINE__)                    
   endif
@@ -905,8 +932,10 @@ implicit none
     write(888,*)'CanopyNH3dep      =',NH3Dep2Can_pft(NZ)
     write(888,*)'RootNFix          =',RootN2Fix_pft(NZ)            
     write(888,*)'seed planted      =',plt_biom%SeedPlantedElm_pft(NE,NZ)     
-    write(888,*)'surf literfall N =',SurfLitrfallElms_pft(NE,NZ)          
-    write(888,*)('-',K=1,100)             
+    write(888,*)'surf literfall N =',SurfLitrfallElms_pft(NE,NZ)
+    !Jing Tao (2026-10-15, branch fix/r2-plant-balance): the balance-only root stock terms, end then start of the hour
+    write(888,*)'beyondN,nodN e/b =',beyondE(NE),nodulE(NE),beyondE_beg(NE,NZ),nodulE_beg(NE,NZ)
+    write(888,*)('-',K=1,100)
     if(abs(balE(NE))>1.e-6_r8 .and. abs(err_rel)>1.e-3_r8)call endrun('N balance error test failure in '//trim(mod_filename)//' at line',__LINE__)      
   endif
 
@@ -933,7 +962,9 @@ implicit none
     write(888,*)'FireLossP         =',FireLossE_pft(NE,NZ)    
     write(888,*)'RootPuptk        =',RootNutUptakeP_pft(NZ)      
     write(888,*)'seed planted     =',plt_biom%SeedPlantedElm_pft(NE,NZ)  
-    write(888,*)'surf literfall P =',SurfLitrfallElms_pft(NE,NZ)      
+    write(888,*)'surf literfall P =',SurfLitrfallElms_pft(NE,NZ)
+    !Jing Tao (2026-10-15, branch fix/r2-plant-balance): the balance-only root stock terms, end then start of the hour
+    write(888,*)'beyondP,nodP e/b =',beyondE(NE),nodulE(NE),beyondE_beg(NE,NZ),nodulE_beg(NE,NZ)
     if(I/=plt_distb%iDayPlantHarvest_pft(NZ) .and. I/=plt_distb%iDayPlanting_pft(NZ)) &  
       call endrun('P balance error test failure in '//trim(mod_filename)//' at line',__LINE__)      
   endif
