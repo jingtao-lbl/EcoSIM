@@ -235,7 +235,8 @@ module grosubsMod
     !   the following purposely starts from layer 0.
     !
     LitrfallElms_pft(1:NumPlantChemElms,NZ)=0._r8
-    D8955: DO L=0,MaxNumRootLays
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    D8955: DO L=0,RootAcctLayerEnd()
       DO K=1,pltpar%NumOfPlantLitrCmplxs      
         D6430: DO M=1,jsken
           DO NE=1,NumPlantChemElms

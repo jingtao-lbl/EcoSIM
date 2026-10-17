@@ -1,6 +1,8 @@
 module PlantDisturbByTillageMod
   use data_kind_mod, only : r8 => DAT_KIND_R8, yearIJ_type
   use PlantBalMod, only : SumRootBiome
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the bottom layer of root removal
+  use PlantBalMod, only : RootAcctLayerEnd
   use PlantDebugMod
   use DebugToolMod
   use PlantAPICommonData
@@ -434,7 +436,8 @@ contains
     ENDDO    
   ENDDO
 
-  D8980: DO L=NU,MaxNumRootLays
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+  D8980: DO L=NU,RootAcctLayerEnd()
     D8985: DO N=1,Myco_pft(NZ)
       D6385: DO M=1,jsken
         DO NE=1,NumPlantChemElms

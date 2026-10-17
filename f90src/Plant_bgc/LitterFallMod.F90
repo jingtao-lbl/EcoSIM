@@ -17,6 +17,8 @@ module LitterFallMod
   use PlantBGCRatesAPIData, only : plt_bgcr
   use PlantRootBGCAPIData, only : plt_rbgc
   use PlantMathFuncMod
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the bottom layer of root removal
+  use PlantBalMod, only: RootAcctLayerEnd
 implicit none
   private
   character(len=*),private, parameter :: mod_filename = &
@@ -355,7 +357,8 @@ implicit none
       !     LitrFall AND STATE VARIABLES FOR SEASONAL STORAGE
       !     RESERVES FROM ROOT AND STORGE AT DEATH
       !        
-      D6415: DO L=NU,MaxNumRootLays
+      !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+      D6415: DO L=NU,RootAcctLayerEnd()
         DO N=1,Myco_pft(NZ)
           DO M=1,jsken
             DO NE=1,NumPlantChemElms
@@ -502,7 +505,8 @@ implicit none
   call PrintInfo('beg '//subname)
   IF(isPlantRootAlive_pft(NZ).EQ.iFalse)THEN
     !add root to LitrFall
-    DO L=NU,MaxNumRootLays        
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    DO L=NU,RootAcctLayerEnd()
       DO N=1,Myco_pft(NZ)
         DO M=1,jsken
           DO NE=1,NumPlantChemElms
@@ -515,7 +519,8 @@ implicit none
 
 
     DO  NR=1,NumStructuralRootAxes_pft(NZ)
-      DO L=NU,MaxNumRootLays        
+      !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+      DO L=NU,RootAcctLayerEnd()
 
         DO N=1,Myco_pft(NZ)
           DO M=1,jsken
@@ -552,7 +557,8 @@ implicit none
     ENDDO    
 
 
-    DO L=NU,MaxNumRootLays             
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    DO L=NU,RootAcctLayerEnd()
       DO N=1,Myco_pft(NZ)
 !
 !     RELEASE GAS CONTENTS OF DEAD ROOTS
@@ -578,7 +584,8 @@ implicit none
     plt_morph%RootMediumXNum_pvr(:,NZ) = 0._r8
 
     D8870: DO NR=1,NumStructuralRootAxes_pft(NZ)
-      DO L=NU,MaxNumRootLays       
+      !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+      DO L=NU,RootAcctLayerEnd()
         RootMyco1stStrutElms_rpvr(1:NumPlantChemElms,L,NR,NZ) = 0._r8
         Root1stActStructElms_rpvr(1:NumPlantChemElms,L,NR,NZ) = 0._r8
         Root1stLigStructElms_rpvr(1:NumPlantChemElms,L,NR,NZ) = 0._r8
@@ -595,7 +602,8 @@ implicit none
       RootMyco1stElm_raxs(1:NumPlantChemElms,NR,NZ)=0._r8            
     ENDDO D8870
 
-    DO L=NU,MaxNumRootLays             
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    DO L=NU,RootAcctLayerEnd()
       Root1stXNumL_pvr(L,NZ)         = 0._r8    
       DO N=1,Myco_pft(NZ)           
         RootMycoNonstElms_rpvr(:,N,L,NZ) = 0._r8
@@ -624,7 +632,8 @@ implicit none
 !
     DO N=1,Myco_pft(NZ)       
       IF(is_plant_N2fix(iPlantNfixType_pft(NZ)).AND.N.EQ.ipltroot)THEN
-        DO L=NU,MaxNumRootLays
+        !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+        DO L=NU,RootAcctLayerEnd()
           D6420: DO M=1,jsken
             DO NE=1,NumPlantChemElms            
               LitrfallElms_pvr(NE,M,k_fine_comp,L,NZ)=LitrfallElms_pvr(NE,M,k_fine_comp,L,NZ)+&
@@ -909,7 +918,8 @@ implicit none
     RootMyco1stElm_raxs(1:NumPlantChemElms,NR,NZ)=0._r8    
   ENDDO
 
-  D6416: DO L=NU,MaxNumRootLays
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+  D6416: DO L=NU,RootAcctLayerEnd()
     DO  NR=1,NumStructuralRootAxes_pft(NZ)
       RootMyco1stStrutElms_rpvr(1:NumPlantChemElms,L,NR,NZ) = 0._r8
       Root1stActStructElms_rpvr(1:NumPlantChemElms,L,NR,NZ) = 0._r8

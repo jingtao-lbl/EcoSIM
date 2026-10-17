@@ -9,6 +9,9 @@ module ExtractsMod
   use PlantBalMod,   only: SumPlantRootGas
   use PlantDebugMod, only: PrintRootTracer
   use EcoSIMCtrlMod, only: lverb, ldo_sp_mode
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the switch and the bottom layer of the fixed litter range
+  use EcoSIMCtrlMod, only: root_accounting_to_nk
+  use PlantBalMod,   only: RootAcctLayerEnd
   use DebugToolMod,  only: PrintInfo
   use EcosimConst
   use PlantBGCPars
@@ -72,6 +75,8 @@ module ExtractsMod
   implicit none
   character(len=*), parameter :: subname='ExtractLitterfall'
   integer :: NZ,L,K,M
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the bottom layer read this hour
+  integer :: LXT
   integer :: NE
   associate(                                                          &
     LitrfallElms_pft          => plt_bgcr%LitrfallElms_pft           ,& !input  :plant element LitrFall, [g d-2 h-1]
@@ -106,7 +111,13 @@ module ExtractsMod
       StandingDeadStrutElms_col(NE) = StandingDeadStrutElms_col(NE)+StandDeadStrutElms_pft(NE,NZ)
     ENDDO
 
-    DO  L=0,MaxSoilLays4Root_pft(NZ)
+    ! --- Jing Tao (2026-10-16, branch fix/r2-nk-root-layer) ---
+    ! With root_accounting_to_nk on, read every layer the plant litter bookkeeping covers, ending at
+    ! RootAcctLayerEnd, rather than the moving MaxSoilLays4Root_pft. ZeroGrosub resets the same range
+    ! each hour, so each layer's litter reaches the soil exactly once, wherever the root tip is.
+    LXT = MaxSoilLays4Root_pft(NZ)
+    if(root_accounting_to_nk)LXT = RootAcctLayerEnd()
+    DO  L=0,LXT
       DO K=1,pltpar%NumOfPlantLitrCmplxs
         DO NE=1,NumPlantChemElms
           DO  M=1,pltpar%jsken

@@ -6,6 +6,8 @@ module PlantDisturbsMod
   use minimathmod,        only: isclose, AZMAX1
   use EcoSIMCtrlDataType, only: DazCurrYear
   use PlantBalMod,        only: SumPlantBranchBiome,SumPlantBiomStates,SumRootBiome,CheckPlantBalanceZ,SumPlantBiome,SumLitfallBlg
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the bottom layer of root removal
+  use PlantBalMod,        only: RootAcctLayerEnd
   use LitterFallMod, only : SetDeadPlant
   use InitPlantMod,  only : InitPlantPhenoMorphoBio,InitRootMychorMorphoBio  
   use PlantDebugMod
@@ -186,7 +188,8 @@ module PlantDisturbsMod
           ENDDO
         ENDDO
 
-        DO L=NU,MaxNumRootLays
+        !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+        DO L=NU,RootAcctLayerEnd()
           DO NE=1,NumPlantChemElms        
             DO N=1,Myco_pft(NZ)
               LitrfallElms_pvr(NE,M,k_fine_comp,L,NZ)=LitrfallElms_pvr(NE,M,k_fine_comp,L,NZ)+&
@@ -618,7 +621,8 @@ module PlantDisturbsMod
           DO NR=1,MaxNumRootAxes
             RootSegBaseDepth_raxes(NR,NZ)         = 0._r8
             Root1stDepz_raxes(NR,NZ)              = 0._r8
-            RootAge_rpvr(NU:MaxNumRootLays,NR,NZ) = 0._r8
+            !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+            RootAge_rpvr(NU:RootAcctLayerEnd(),NR,NZ) = 0._r8
             RootCRRadius0_rpvr(:,NR,NZ)           = 0._r8
           ENDDO            
         ENDIF
@@ -939,7 +943,8 @@ module PlantDisturbsMod
       !
 
       D3985: DO N=1,Myco_pft(NZ)
-        D3980: DO L=NU,MaxNumRootLays
+        !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+        D3980: DO L=NU,RootAcctLayerEnd()
           !          
           CALL RootRemovalLbyFire(yearIJ,N,L,NZ,FracLeftThin,XHVST1)
 
@@ -2174,7 +2179,8 @@ module PlantDisturbsMod
   )
   call PrintInfo('beg '//subname)
   DO N=1,Myco_pft(NZ)
-    DO L=NU,MaxNumRootLays
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    DO L=NU,RootAcctLayerEnd()
       call RootRemovalL4Annual(yearIJ,N,L,NZ,FracLeftThin,XHVST1)
 
       call HarvstUpdateRootStateL(yearIJ,N,L,NZ,FracLeftThin,XHVST1,PopulationThinning=.false.)

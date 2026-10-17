@@ -7,6 +7,8 @@ module PlantBalMod
   use EcoSiMParDataMod, only: pltpar
   use abortutils,       only: endrun
   use EcoSIMCtrlMod, only: guard_floor_dying_stand, VEGC_BAL_FLOOR_dying
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the switch read by RootAcctLayerEnd
+  use EcoSIMCtrlMod, only: root_accounting_to_nk
   use PlantMathFuncMod
   use PlantAPICommonData
   use PlantSiteAPIData, only : plt_site
@@ -33,6 +35,8 @@ implicit none
   public :: SumRootAR
   public :: CheckPlantBalanceZ
   public :: SumLitfallBlg
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): the bottom layer of root removal and root accounting
+  public :: RootAcctLayerEnd
   public :: SumCanopyBiome
   public :: SumLitfallAbg
   logical,save  :: lfile(2)=.true.
@@ -140,7 +144,8 @@ implicit none
   )
   LitrfallBlgrElms_pft(1:NumPlantChemElms,NZ) = 0._r8
 
-  DO L=1,MaxNumRootLays
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+  DO L=1,RootAcctLayerEnd()
     DO K=1,pltpar%NumOfPlantLitrCmplxs      
       DO M=1,jsken
         DO NE=1,NumPlantChemElms
@@ -481,7 +486,8 @@ implicit none
     plt_biom%SpecificLeafArea_pft(NZ)            = 0._r8
     plt_biom%LeafProteinCperm2LA_pft(NZ)         = 0._r8
     plt_bgcr%Xfer2RootsC_pft(NZ)                 = 0._R8
-    D1: DO L=0,MaxNumRootLays
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    D1: DO L=0,RootAcctLayerEnd()
       DO K=1,pltpar%NumOfPlantLitrCmplxs
         DO M=1,jsken
           DO NE=1,NumPlantChemElms
@@ -569,7 +575,8 @@ implicit none
   RootElms_pft(:,NZ)=0._r8
   RootMycoNonstElms_pft(:,:,NZ)=0._r8
   DO NE=1,NumPlantChemElms
-    DO L=1,MaxNumRootLays
+    !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): to NK when root_accounting_to_nk is on, see RootAcctLayerEnd
+    DO L=1,RootAcctLayerEnd()
       DO N=1,Myco_pft(NZ)
         RootMycoMassElm_pvr(NE,N,L,NZ) = sum(RootMyco2ndStrutElms_rpvr(NE,N,L,1:NumStructuralRootAxes_pft(NZ),NZ))+RootMycoNonstElms_rpvr(NE,N,L,NZ)
         RootMycoNonstElms_pft(NE,N,NZ) = RootMycoNonstElms_pft(NE,N,NZ)+RootMycoNonstElms_rpvr(NE,N,L,NZ)
@@ -658,7 +665,8 @@ implicit none
   nodulE   = 0._r8
   beyondAR = 0._r8
   !Jing Tao (2026-10-15, branch fix/r2-plant-balance): LSTK replaces LBAL for the stock
-  DO L=MaxNumRootLays+1,LSTK
+  !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): starts below RootAcctLayerEnd, so a layer SumRootBiome counts is not counted twice
+  DO L=RootAcctLayerEnd()+1,LSTK
     DO NE=1,NumPlantChemElms
       DO N=1,Myco_pft(NZ)
         beyondE(NE)=beyondE(NE)+RootMycoNonstElms_rpvr(NE,N,L,NZ) &
@@ -681,6 +689,18 @@ implicit none
   ENDDO
   end associate
   end subroutine SumRootPoolsForBalance
+
+!----------------------------------------------------------------------------------------------------
+! --- Jing Tao (2026-10-16, branch fix/r2-nk-root-layer) ---
+! The deepest soil layer that root removal, the plant litter bookkeeping and the root totals cover.
+! MaxNumRootLays by default. With root_accounting_to_nk on it is NK, the deepest layer roots occupy:
+! RootBiochemistry grows and senesces roots through MaxNumRootLays+1 and GetInLayerRootDepth lets a
+! root tip enter NK, so root mass and root litter there must be removed, reset and counted too.
+  integer function RootAcctLayerEnd()
+  implicit none
+  RootAcctLayerEnd = plt_site%MaxNumRootLays
+  if(root_accounting_to_nk)RootAcctLayerEnd = MAX(plt_site%MaxNumRootLays,plt_site%NK)
+  end function RootAcctLayerEnd
 
 !----------------------------------------------------------------------------------------------------
   subroutine EnterPlantBalance(yearIJ,NP)

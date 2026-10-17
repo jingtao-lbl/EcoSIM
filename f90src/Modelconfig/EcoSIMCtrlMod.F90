@@ -45,6 +45,14 @@ implicit none
 ! ChargeRootDeficitUpAxis). Off by default, so a run reproduces the previous behaviour exactly.
   logical :: conserve_root_clamp = .false.
 
+! --- Jing Tao (2026-10-16, branch fix/r2-nk-root-layer) ---
+! Remove and count root mass and root litter through layer NK = MaxNumRootLays+1, the deepest layer
+! roots occupy, instead of stopping at MaxNumRootLays (jinyun1tang/EcoSIM issue 239): the removal
+! loops at stand death, tillage, harvest and annual death, the hourly reset of the plant litter
+! array, the plant balance's litter term, the soil's read of plant litter, and the root totals.
+! Off by default, so a run reproduces the previous behaviour exactly.
+  logical :: root_accounting_to_nk = .false.
+
 ! --- Jing Tao ---
 ! absolute floor [gC] on the carbon-pool DENOMINATOR in the leaf nutrient-withdrawal
 ! division. Far below any physically meaningful pool (a healthy stand carries
