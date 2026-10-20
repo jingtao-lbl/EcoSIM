@@ -178,9 +178,10 @@ contains
 !     guard_floor_dying_stand = .true.
 !Jing Tao (2026-10-14, branch fix/r2-plant-balance): conserve_root_clamp joins the group the same way, default .false.
 !Jing Tao (2026-10-16, branch fix/r2-nk-root-layer): root_accounting_to_nk joins the group the same way, default .false.
+!Jing Tao (2026-10-20, branch fix/r2-canopy-psi-floor): bound_canopy_psi joins the group the same way, default .false.
   namelist /ecosim/hist_nhtfrq,hist_mfilt,hist_fincl1,hist_fincl2,hist_fincl3,hist_yrclose, lmicrobeMLdiag,&
     do_budgets,ref_date,start_date,do_timing,do_timing_detail,warming_exp,fixClime,FireEvents,oscal_test,&
-    lcoarseroot,guard_floor_dying_stand,conserve_root_clamp,root_accounting_to_nk
+    lcoarseroot,guard_floor_dying_stand,conserve_root_clamp,root_accounting_to_nk,bound_canopy_psi
 
   logical :: laddband
   namelist /bbgcforc/do_bgcforc_write,do_year,do_doy,laddband,do_layer,&

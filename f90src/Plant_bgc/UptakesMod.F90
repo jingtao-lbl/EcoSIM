@@ -2,7 +2,8 @@ module UptakesMod
   use data_kind_mod , only : r8 => DAT_KIND_R8,yearIJ_type
   use data_const_mod, only: GravAcceleration=>DAT_CONST_G
   use StomatesMod,    only: StomatalDynamics, PhotosynsDiag
-  use EcoSIMCtrlMod,  only: etimer, ldo_sp_mode, ats_cpl_mode
+  !Jing Tao (2026-10-20, branch fix/r2-canopy-psi-floor): bound_canopy_psi switches on the floor in CanopyEnergyH2OIter_func
+  use EcoSIMCtrlMod,  only: etimer, ldo_sp_mode, ats_cpl_mode, bound_canopy_psi
   use UnitMod,        only: units
   use PlantBalMod,    only: SumPlantRootGas
   use MiniFuncMod,    only: gOC_to_m3_OM
@@ -1132,6 +1133,8 @@ module UptakesMod
         SymplasmicWaterPrev    = SymplasmicWater
 
         PSICanopy_pft(NZ) = AMIN1(PSICanopy_pft(NZ)*0.5_r8,PSICanopy_pft(NZ)+0.5_r8*DPSI)
+        !Jing Tao (2026-10-20, branch fix/r2-canopy-psi-floor): with bound_canopy_psi on, the update's fall stops at PSIHY, mirroring its ceiling
+        if(bound_canopy_psi)PSICanopy_pft(NZ) = AMAX1(PSIHY,PSICanopy_pft(NZ))
         DPSI_old          = DPSI
         XC                = 0.50_r8!
       ENDIF

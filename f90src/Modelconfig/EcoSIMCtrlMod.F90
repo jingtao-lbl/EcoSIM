@@ -53,6 +53,13 @@ implicit none
 ! Off by default, so a run reproduces the previous behaviour exactly.
   logical :: root_accounting_to_nk = .false.
 
+! --- Jing Tao (2026-10-20, branch fix/r2-canopy-psi-floor) ---
+! Floor the canopy water potential at the hygroscopic potential PSIHY (-2500 MPa, EcoSimConst) in the
+! canopy water solver's update (CanopyEnergyH2OIter_func, UptakesMod), which caps a rise but not a fall:
+! a vestigial canopy otherwise drives it past single precision and the history write traps an overflow.
+! Off by default, so a run reproduces the previous behaviour exactly.
+  logical :: bound_canopy_psi = .false.
+
 ! --- Jing Tao ---
 ! absolute floor [gC] on the carbon-pool DENOMINATOR in the leaf nutrient-withdrawal
 ! division. Far below any physically meaningful pool (a healthy stand carries
